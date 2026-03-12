@@ -1,0 +1,7 @@
+﻿services:
+  - type: web
+    name: pogo-box-analyzer
+    runtime: python
+    buildCommand: pip install -r requirements.txt && pip install .
+    startCommand: python -m pogo_box_analyzer serve-web --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health

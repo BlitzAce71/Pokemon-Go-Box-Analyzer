@@ -1,0 +1,25 @@
+﻿[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pogo-box-analyzer"
+version = "0.1.0"
+description = "Analyze Pokemon GO box screenshots and export species-level trait counts."
+requires-python = ">=3.10"
+dependencies = [
+  "Pillow>=10.0",
+  "rapidocr-onnxruntime>=1.4.4",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+pogo_box_analyzer = ["web/*"]
+
+[project.scripts]
+pogo-box-analyzer = "pogo_box_analyzer.cli:main"

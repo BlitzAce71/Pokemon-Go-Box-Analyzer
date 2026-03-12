@@ -1,0 +1,50 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f766e" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <title>PoGo Box Analyzer</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="hero">
+        <p class="kicker">Mobile Analyzer</p>
+        <h1>PoGo Box Analyzer</h1>
+        <p class="subtitle">Upload mixed screenshot searches, auto-detect the search term from each screenshot, then download/share CSV.</p>
+      </header>
+
+      <section class="card">
+        <h2>Upload Screenshots</h2>
+        <p class="hint">You can mix all screenshots (all, dynamax, lucky, shiny, costume, 4*, mega, normal, etc.) in one upload.</p>
+        <input id="screenshots-input" type="file" accept="image/*" multiple />
+        <p id="file-count" class="status">0 files selected.</p>
+      </section>
+
+      <section class="actions card">
+        <button id="analyze-btn" class="btn-primary">Analyze Screenshots</button>
+        <p id="status" class="status">Ready.</p>
+      </section>
+
+      <section id="results" class="card hidden">
+        <div class="results-head">
+          <h2>Results</h2>
+          <div class="result-buttons">
+            <button id="download-btn" class="btn-secondary">Download CSV</button>
+            <button id="share-btn" class="btn-secondary">Share CSV</button>
+          </div>
+        </div>
+        <pre id="summary" class="summary"></pre>
+        <div class="table-wrap">
+          <table id="preview-table"></table>
+        </div>
+      </section>
+    </main>
+
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>

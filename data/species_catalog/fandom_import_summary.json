@@ -1,0 +1,16 @@
+{
+  "html_items_parsed": 1360,
+  "catalog_rows_written": 1123,
+  "missing_assets": 4,
+  "skipped_not_released": 182,
+  "skipped_mega_like": 0,
+  "skipped_invalid": 0,
+  "deduped": 51,
+  "catalog_csv": "data\\species_catalog\\catalog_fandom.csv",
+  "icons_dir": "data\\species_catalog\\icons_fandom",
+  "merge_base_rows": 0,
+  "merge_imported_rows": 1123,
+  "merge_added_rows": 1123,
+  "merge_merged_rows": 1123,
+  "merge_output_catalog": "data\\species_catalog\\catalog.csv"
+}

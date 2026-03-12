@@ -1,0 +1,26 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+
+# Virtual environments
+.venv/
+
+# Local temp / scratch
+.tmp/
+.tmp2/
+*.log
+
+# Local runtime data
+input/
+output/
+source images/
+
+# Large/raw source dumps
+data/source/
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,11 @@
+﻿{
+  "name": "PoGo Box Analyzer",
+  "short_name": "PoGoAnalyzer",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#e6f2ed",
+  "theme_color": "#0f766e",
+  "description": "Analyze Pokemon GO screenshot passes and export species trait CSV.",
+  "icons": []
+}

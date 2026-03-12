@@ -1,0 +1,262 @@
+﻿from __future__ import annotations
+
+import base64
+import csv
+import io
+import json
+import re
+import tempfile
+from dataclasses import dataclass
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Any
+
+from .config import load_config
+from .pipeline import run_pipeline
+
+_ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+_PASS_NAME_RE = re.compile(r"^[a-zA-Z0-9_!\-*&]+$")
+
+_STATIC_ROUTES: dict[str, tuple[str, str]] = {
+    "/": ("index.html", "text/html; charset=utf-8"),
+    "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
+    "/sw.js": ("sw.js", "application/javascript; charset=utf-8"),
+    "/static/styles.css": ("styles.css", "text/css; charset=utf-8"),
+    "/static/app.js": ("app.js", "application/javascript; charset=utf-8"),
+}
+
+
+@dataclass(frozen=True)
+class WebServerSettings:
+    config_path: Path
+    catalog_csv: Path
+    catalog_images_dir: Path
+    trait_templates_dir: Path
+    static_dir: Path
+
+
+def run_web_server(
+    host: str,
+    port: int,
+    config_path: Path | None = None,
+    catalog_csv: Path | None = None,
+    catalog_images_dir: Path | None = None,
+    trait_templates_dir: Path | None = None,
+) -> None:
+    settings = _resolve_settings(
+        config_path=config_path,
+        catalog_csv=catalog_csv,
+        catalog_images_dir=catalog_images_dir,
+        trait_templates_dir=trait_templates_dir,
+    )
+
+    handler_class = _build_handler(settings)
+    server = ThreadingHTTPServer((host, port), handler_class)
+
+    print(f"Serving web app on http://{host}:{port}")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("Shutting down web server...")
+    finally:
+        server.server_close()
+
+
+def _resolve_settings(
+    config_path: Path | None,
+    catalog_csv: Path | None,
+    catalog_images_dir: Path | None,
+    trait_templates_dir: Path | None,
+) -> WebServerSettings:
+    package_dir = Path(__file__).resolve().parent
+    project_dir = package_dir.parents[1]
+    return WebServerSettings(
+        config_path=config_path or (project_dir / "config" / "default_config.json"),
+        catalog_csv=catalog_csv or (project_dir / "data" / "species_catalog" / "catalog.csv"),
+        catalog_images_dir=catalog_images_dir or (project_dir / "data" / "species_catalog"),
+        trait_templates_dir=trait_templates_dir or (project_dir / "data" / "templates" / "traits"),
+        static_dir=package_dir / "web",
+    )
+
+
+def _build_handler(settings: WebServerSettings) -> type[BaseHTTPRequestHandler]:
+    class Handler(BaseHTTPRequestHandler):
+        server_version = "PoGoBoxAnalyzer/0.1"
+
+        def do_GET(self) -> None:  # noqa: N802
+            route = self.path.split("?", 1)[0]
+            if route == "/health":
+                self._send_json(HTTPStatus.OK, {"ok": True})
+                return
+
+            static = _STATIC_ROUTES.get(route)
+            if static is None:
+                self._send_json(HTTPStatus.NOT_FOUND, {"error": "Route not found."})
+                return
+
+            filename, content_type = static
+            self._send_static_file(settings.static_dir / filename, content_type=content_type)
+
+        def do_POST(self) -> None:  # noqa: N802
+            route = self.path.split("?", 1)[0]
+            if route != "/api/analyze":
+                self._send_json(HTTPStatus.NOT_FOUND, {"error": "Route not found."})
+                return
+            self._handle_analyze()
+
+        def _handle_analyze(self) -> None:
+            payload = self._read_json_body(max_bytes=250_000_000)
+            if payload is None:
+                return
+
+            uploads_obj = payload.get("uploads")
+            if not isinstance(uploads_obj, list):
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "Expected JSON body with uploads list."})
+                return
+
+            with tempfile.TemporaryDirectory(prefix="pogo_web_") as td:
+                root = Path(td)
+                input_dir = root / "input"
+                output_dir = root / "output"
+                input_dir.mkdir(parents=True, exist_ok=True)
+                output_dir.mkdir(parents=True, exist_ok=True)
+
+                saved = 0
+                for idx, entry in enumerate(uploads_obj):
+                    if not isinstance(entry, dict):
+                        continue
+
+                    pass_name = str(entry.get("pass_name", "auto")).strip() or "auto"
+                    filename = str(entry.get("filename", "")).strip()
+                    data_base64 = str(entry.get("data_base64", "")).strip()
+
+                    if not pass_name or not _PASS_NAME_RE.match(pass_name):
+                        continue
+                    if not data_base64:
+                        continue
+
+                    extension = Path(filename).suffix.lower()
+                    if extension not in _ALLOWED_EXTENSIONS:
+                        extension = ".png"
+                        filename = (Path(filename).stem or f"upload_{idx}") + extension
+
+                    safe_name = _safe_filename(filename)
+                    target_dir = input_dir / pass_name
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                    target_path = target_dir / f"{idx:05d}_{safe_name}"
+
+                    try:
+                        binary = base64.b64decode(data_base64, validate=True)
+                    except Exception:
+                        continue
+
+                    if not binary:
+                        continue
+
+                    target_path.write_bytes(binary)
+                    saved += 1
+
+                if saved == 0:
+                    self._send_json(HTTPStatus.BAD_REQUEST, {"error": "No valid image files were uploaded."})
+                    return
+
+                config = load_config(settings.config_path if settings.config_path.exists() else None)
+                summary = run_pipeline(
+                    input_dir=input_dir,
+                    output_dir=output_dir,
+                    config=config,
+                    catalog_csv=settings.catalog_csv,
+                    catalog_images_dir=settings.catalog_images_dir,
+                    trait_templates_dir=settings.trait_templates_dir,
+                    manifest_path=None,
+                )
+
+                species_csv_path = Path(str(summary.get("species_counts_csv", "")))
+                if not species_csv_path.exists():
+                    self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "Analyzer did not produce species CSV."})
+                    return
+
+                csv_text = species_csv_path.read_text(encoding="utf-8-sig")
+                preview_rows = _preview_csv(csv_text, max_rows=50)
+
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "summary": summary,
+                        "csv_text": csv_text,
+                        "preview": preview_rows,
+                    },
+                )
+
+        def _read_json_body(self, max_bytes: int) -> dict[str, Any] | None:
+            content_type = self.headers.get("Content-Type", "")
+            if "application/json" not in content_type:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "Content-Type must be application/json."})
+                return None
+
+            content_length_text = self.headers.get("Content-Length", "0")
+            try:
+                content_length = int(content_length_text)
+            except ValueError:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "Invalid Content-Length header."})
+                return None
+
+            if content_length <= 0:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "Empty request body."})
+                return None
+            if content_length > max_bytes:
+                self._send_json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": "Payload too large."})
+                return None
+
+            body = self.rfile.read(content_length)
+            try:
+                parsed = json.loads(body.decode("utf-8"))
+            except Exception:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "Invalid JSON body."})
+                return None
+
+            if not isinstance(parsed, dict):
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "JSON body must be an object."})
+                return None
+
+            return parsed
+
+        def _send_json(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
+            data = json.dumps(payload).encode("utf-8")
+            self.send_response(status.value)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def _send_static_file(self, path: Path, content_type: str) -> None:
+            if not path.exists() or not path.is_file():
+                self._send_json(HTTPStatus.NOT_FOUND, {"error": "Static file missing."})
+                return
+
+            data = path.read_bytes()
+            self.send_response(HTTPStatus.OK.value)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+    return Handler
+
+
+def _safe_filename(name: str) -> str:
+    base = Path(name).name
+    base = re.sub(r"[^a-zA-Z0-9._-]+", "_", base)
+    return base[:120] or "upload.png"
+
+
+def _preview_csv(csv_text: str, max_rows: int) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    fh = io.StringIO(csv_text)
+    reader = csv.DictReader(fh)
+    for idx, row in enumerate(reader):
+        if idx >= max_rows:
+            break
+        rows.append({k: str(v) for k, v in row.items()})
+    return rows

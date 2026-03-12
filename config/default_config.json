@@ -1,0 +1,157 @@
+{
+  "grid": {
+    "rows": 4,
+    "cols": 3,
+    "start_x": 0.055,
+    "start_y": 0.175,
+    "cell_w": 0.285,
+    "cell_h": 0.17,
+    "gap_x": 0.03,
+    "gap_y": 0.022
+  },
+  "icon_roi": {
+    "x": 0.22,
+    "y": 0.26,
+    "w": 0.56,
+    "h": 0.52
+  },
+  "trait_rois": {
+    "shiny": {
+      "x": 0.1,
+      "y": 0.18,
+      "w": 0.24,
+      "h": 0.22
+    },
+    "lucky": {
+      "x": 0.16,
+      "y": 0.18,
+      "w": 0.7,
+      "h": 0.5
+    },
+    "shadow": {
+      "x": 0.08,
+      "y": 0.49,
+      "w": 0.23,
+      "h": 0.24
+    },
+    "purified": {
+      "x": 0.08,
+      "y": 0.49,
+      "w": 0.23,
+      "h": 0.24
+    },
+    "dynamax": {
+      "x": 0.6,
+      "y": 0.12,
+      "w": 0.3,
+      "h": 0.26
+    },
+    "costume": {
+      "x": 0.3,
+      "y": 0.1,
+      "w": 0.4,
+      "h": 0.3
+    }
+  },
+  "trait_thresholds": {
+    "shiny": 0.55,
+    "lucky": 0.72,
+    "shadow": 0.25,
+    "purified": 0.3,
+    "dynamax": 0.55,
+    "costume": 0.6
+  },
+  "species_match_threshold": 0.68,
+  "pass_rules": {
+    "all": {
+      "include_total": true,
+      "include_visible_traits": false,
+      "add_traits": []
+    },
+    "query_dynamax": {
+      "include_total": false,
+      "include_visible_traits": false,
+      "add_traits": [
+        "dynamax"
+      ]
+    },
+    "query_lucky": {
+      "include_total": false,
+      "include_visible_traits": false,
+      "add_traits": [
+        "lucky"
+      ]
+    },
+    "query_shadow": {
+      "include_total": false,
+      "include_visible_traits": false,
+      "add_traits": [
+        "shadow"
+      ]
+    },
+    "query_purified": {
+      "include_total": false,
+      "include_visible_traits": false,
+      "add_traits": [
+        "purified"
+      ]
+    },
+    "query_shiny": {
+      "include_total": false,
+      "include_visible_traits": false,
+      "add_traits": [
+        "shiny"
+      ]
+    },
+    "query_costume": {
+      "include_total": false,
+      "include_visible_traits": false,
+      "add_traits": [
+        "costume"
+      ]
+    },
+    "query_4star": {
+      "include_total": false,
+      "include_visible_traits": false,
+      "add_traits": [
+        "hundo_4star"
+      ]
+    },
+    "query_mega": {
+      "include_total": false,
+      "include_visible_traits": false,
+      "add_traits": [
+        "mega_capable"
+      ]
+    },
+    "query_normal": {
+      "include_total": false,
+      "include_visible_traits": false,
+      "add_traits": [
+        "normal"
+      ]
+    }
+  },
+  "trait_columns": [
+    "normal",
+    "shiny",
+    "lucky",
+    "shadow",
+    "purified",
+    "dynamax",
+    "mega_capable",
+    "hundo_4star",
+    "0star",
+    "1star",
+    "2star",
+    "3star"
+  ],
+  "visible_special_traits": [
+    "shiny",
+    "lucky",
+    "shadow",
+    "purified",
+    "dynamax"
+  ],
+  "dedupe_hash_max_distance": 2
+}
