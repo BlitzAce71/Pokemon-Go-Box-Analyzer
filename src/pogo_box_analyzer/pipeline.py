@@ -10,7 +10,7 @@ from .aggregate import aggregate_observations, write_species_csv
 from .config import Config, GridConfig
 from .image_ops import dhash, hamming_distance, iter_grid_cells, load_image
 from .models import Observation, SpeciesKey, UnknownObservation
-from .ocr_windows import OcrLine, SpeciesNameMatcher, pick_cell_cp_value, pick_cell_name_text, run_ocr
+from .ocr_windows import OcrLine, SpeciesNameMatcher, run_ocr
 from .species_catalog import SpeciesMatch, SpeciesReference, find_best_species_match, load_species_catalog
 from .trait_detector import TraitTemplateStore, detect_visible_traits
 
@@ -62,11 +62,14 @@ def run_pipeline(
     auto_pass_detected = 0
     auto_pass_fallback_all = 0
 
+    ocr_search_crops_dir = output_dir / "_ocr_search_crops"
+    ocr_search_crops_dir.mkdir(parents=True, exist_ok=True)
+
     for shot in shots:
         image = load_image(str(shot.path))
         image_w, image_h = image.size
 
-        ocr_lines = run_ocr(shot.path)
+        ocr_lines = _run_search_bar_ocr(image=image, screenshot_path=shot.path, ocr_temp_dir=ocr_search_crops_dir)
         effective_pass_name, was_auto, was_detected = _resolve_effective_pass_name(
             original_pass_name=shot.pass_name,
             ocr_lines=ocr_lines,
@@ -98,9 +101,8 @@ def run_pipeline(
                 continue
             pass_seen.append(fingerprint)
 
-            cell_bbox = _rect_to_pixels(image_w, image_h, cell_rect)
-            slot_name_text = pick_cell_name_text(ocr_lines, cell_bbox)
-            slot_cp = pick_cell_cp_value(ocr_lines, cell_bbox)
+            slot_name_text = None
+            slot_cp = None
 
             species_match, accepted_from_ocr = _match_with_ocr_first(
                 icon_image=cell_image,
@@ -345,6 +347,42 @@ def _load_from_manifest(manifest_path: Path, input_dir: Path) -> list[Screenshot
 
     return shots
 
+
+
+def _run_search_bar_ocr(image, screenshot_path: Path, ocr_temp_dir: Path) -> list[OcrLine]:
+    w, h = image.size
+    x0 = int(round(0.05 * w))
+    y0 = int(round(0.10 * h))
+    x1 = int(round(0.95 * w))
+    y1 = int(round(0.34 * h))
+
+    if x1 <= x0 or y1 <= y0:
+        return []
+
+    crop = image.crop((x0, y0, x1, y1))
+    crop_path = ocr_temp_dir / f"{screenshot_path.stem}_search.png"
+
+    try:
+        crop.save(crop_path)
+    except Exception:
+        return []
+
+    lines = run_ocr(crop_path)
+    if not lines:
+        return []
+
+    remapped: list[OcrLine] = []
+    for line in lines:
+        remapped.append(
+            OcrLine(
+                text=line.text,
+                x=line.x + x0,
+                y=line.y + y0,
+                w=line.w,
+                h=line.h,
+            )
+        )
+    return remapped
 
 def _resolve_effective_pass_name(
     original_pass_name: str,
