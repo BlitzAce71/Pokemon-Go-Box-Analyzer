@@ -222,7 +222,7 @@ def _match_with_ocr_first(
 
     # If OCR name is weak/missing, only accept an icon-only match at a very high threshold.
     global_match = find_best_species_match(icon_image=icon_image, refs=all_refs)
-    high_threshold = max(0.95, global_threshold + 0.24)
+    high_threshold = max(0.78, global_threshold + 0.08)
     if global_match is not None and global_match.score >= high_threshold:
         return global_match, False
 
@@ -427,6 +427,12 @@ def _detect_pass_name_from_search_bar(lines: list[OcrLine], image_w: int, image_
         if classified is not None:
             return classified
 
+    # OCR boxes can be noisy on some devices; do one final unconstrained scan.
+    for line in lines:
+        classified = _classify_search_query_text(_normalize_search_text(line.text or ""))
+        if classified is not None and classified != "all":
+            return classified
+
     # No confident pass classification from OCR.
     return None
 
@@ -610,11 +616,11 @@ def _resolve_pass_rule(pass_name: str, config: Config) -> dict[str, object]:
     if "normal" in compact or looks_like_normal_negation:
         inferred_traits.append("normal")
 
-    include_total = compact in {"all", "query_all"} or compact.startswith("all_")
+    include_total = compact in {"all", "query_all"} or compact.startswith("all_") or not inferred_traits
 
     return {
         "include_total": include_total,
-        "include_visible_traits": False,
+        "include_visible_traits": not inferred_traits,
         "add_traits": inferred_traits,
     }
 
