@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -33,9 +34,22 @@ class SpeciesMatch:
     score: float
 
 
+_CATALOG_CACHE_LOCK = threading.Lock()
+_CATALOG_CACHE_KEY: tuple[str, str, int] | None = None
+_CATALOG_CACHE_REFS: list[SpeciesReference] | None = None
+
+
 def load_species_catalog(catalog_csv: Path, image_base_dir: Path) -> list[SpeciesReference]:
+    global _CATALOG_CACHE_KEY, _CATALOG_CACHE_REFS
+
     if not catalog_csv.exists():
         return []
+
+    cache_key = _build_cache_key(catalog_csv=catalog_csv, image_base_dir=image_base_dir)
+    if cache_key is not None:
+        with _CATALOG_CACHE_LOCK:
+            if _CATALOG_CACHE_KEY == cache_key and _CATALOG_CACHE_REFS is not None:
+                return _CATALOG_CACHE_REFS
 
     refs: list[SpeciesReference] = []
     with catalog_csv.open("r", newline="", encoding="utf-8") as fh:
@@ -71,7 +85,25 @@ def load_species_catalog(catalog_csv: Path, image_base_dir: Path) -> list[Specie
                 )
             )
 
+    if cache_key is not None:
+        with _CATALOG_CACHE_LOCK:
+            _CATALOG_CACHE_KEY = cache_key
+            _CATALOG_CACHE_REFS = refs
+
     return refs
+
+
+def _build_cache_key(catalog_csv: Path, image_base_dir: Path) -> tuple[str, str, int] | None:
+    try:
+        csv_stat = catalog_csv.stat()
+    except OSError:
+        return None
+
+    return (
+        str(catalog_csv.resolve()),
+        str(image_base_dir.resolve()),
+        int(csv_stat.st_mtime_ns),
+    )
 
 
 def find_best_species_match(icon_image, refs: list[SpeciesReference]) -> SpeciesMatch | None:
@@ -106,4 +138,3 @@ def match_species(icon_image, refs: list[SpeciesReference], threshold: float) ->
     if best.score < threshold:
         return None
     return best
-

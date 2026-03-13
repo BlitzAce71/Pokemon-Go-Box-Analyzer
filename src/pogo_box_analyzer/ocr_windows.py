@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import os
@@ -9,6 +9,8 @@ import unicodedata
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
+
+from PIL import Image
 
 
 @dataclass(frozen=True)
@@ -201,7 +203,9 @@ def run_rapidocr(image_path: Path) -> list[OcrLine]:
         engine = _RAPID_OCR_ENGINE
 
     try:
-        result, _ = engine(str(image_path))
+        ocr_input = _prepare_ocr_image(image_path)
+        # Pokemon GO screenshots are upright; skipping cls reduces memory and latency.
+        result, _ = engine(ocr_input, use_cls=False)
     except Exception:
         return []
 
@@ -223,6 +227,26 @@ def run_rapidocr(image_path: Path) -> list[OcrLine]:
 
     return out
 
+
+
+def _prepare_ocr_image(image_path: Path, max_side: int = 1280):
+    try:
+        with Image.open(image_path) as src:
+            img = src.convert("RGB")
+    except Exception:
+        return str(image_path)
+
+    w, h = img.size
+    longest = max(w, h)
+    if longest <= max_side:
+        return img
+
+    scale = max_side / float(longest)
+    new_size = (
+        max(1, int(round(w * scale))),
+        max(1, int(round(h * scale))),
+    )
+    return img.resize(new_size, Image.Resampling.BILINEAR)
 
 def run_ocr(image_path: Path, script_path: Path | None = None) -> list[OcrLine]:
     # Prefer native Windows OCR when available, then RapidOCR fallback.
