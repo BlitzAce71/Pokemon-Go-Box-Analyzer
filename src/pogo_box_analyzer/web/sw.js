@@ -1,9 +1,9 @@
-﻿const CACHE_NAME = "pogo-box-analyzer-v1";
+﻿const CACHE_NAME = "pogo-box-analyzer-v2";
 const ASSETS = [
   "/",
   "/manifest.webmanifest",
-  "/static/styles.css",
-  "/static/app.js"
+  "/static/styles.css?v=20260313b",
+  "/static/app.js?v=20260313b"
 ];
 
 self.addEventListener("install", (event) => {
