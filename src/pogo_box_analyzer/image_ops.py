@@ -234,12 +234,12 @@ def color_similarity(a: tuple[float, float, float], b: tuple[float, float, float
     return max(0.0, 1.0 - (distance / max_distance))
 
 
-def to_gray_vector(image: Image.Image, size: tuple[int, int] = (32, 32)) -> list[int]:
+def to_gray_vector(image: Image.Image, size: tuple[int, int] = (32, 32)) -> bytes:
     gray = image.convert("L").resize(size, Image.Resampling.BILINEAR)
-    return list(gray.getdata())
+    return bytes(gray.getdata())
 
 
-def gray_vector_similarity(a: list[int], b: list[int]) -> float:
+def gray_vector_similarity(a: bytes | list[int], b: bytes | list[int]) -> float:
     if not a or not b or len(a) != len(b):
         return 0.0
     mae = sum(abs(x - y) for x, y in zip(a, b)) / len(a)
@@ -253,3 +253,4 @@ def grayscale_similarity(a: Image.Image, b: Image.Image, size: tuple[int, int] =
     pb = list(bb.getdata())
     mae = sum(abs(x - y) for x, y in zip(pa, pb)) / len(pa)
     return max(0.0, 1.0 - (mae / 255.0))
+

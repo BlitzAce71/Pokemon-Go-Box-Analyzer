@@ -1,4 +1,4 @@
-﻿let latestCsvBlob = null;
+let latestCsvBlob = null;
 let latestCsvName = "species_counts.csv";
 
 const fileInput = document.getElementById("screenshots-input");
@@ -43,20 +43,17 @@ async function analyze() {
   setStatus(`Preparing ${files.length} screenshots...`);
 
   try {
-    const uploads = await Promise.all(
-      files.map(async (file) => ({
-        pass_name: "auto",
-        filename: file.name,
-        data_base64: await readFileAsBase64(file),
-      }))
-    );
+    const formData = new FormData();
+    formData.append("pass_name", "auto");
+    for (const file of files) {
+      formData.append("files", file, file.name);
+    }
 
-    setStatus(`Encoding and analyzing ${uploads.length} screenshots...`);
+    setStatus(`Uploading and analyzing ${files.length} screenshots...`);
 
     const resp = await fetch("/api/analyze", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ uploads }),
+      body: formData,
     });
 
     const raw = await resp.text();
@@ -92,23 +89,6 @@ async function analyze() {
   } finally {
     analyzeBtn.disabled = false;
   }
-}
-
-function readFileAsBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = String(reader.result || "");
-      const idx = result.indexOf(",");
-      if (idx < 0) {
-        reject(new Error(`Failed to encode file: ${file.name}`));
-        return;
-      }
-      resolve(result.slice(idx + 1));
-    };
-    reader.onerror = () => reject(new Error(`Failed to read file: ${file.name}`));
-    reader.readAsDataURL(file);
-  });
 }
 
 function renderSummary(summary) {

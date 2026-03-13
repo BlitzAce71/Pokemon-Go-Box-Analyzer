@@ -24,7 +24,7 @@ class SpeciesReference:
     image_path: Path
     image_hash: int
     avg_color: tuple[float, float, float]
-    gray_vec: list[int]
+    gray_vec: bytes
 
 
 @dataclass(frozen=True)
@@ -106,3 +106,4 @@ def match_species(icon_image, refs: list[SpeciesReference], threshold: float) ->
     if best.score < threshold:
         return None
     return best
+
