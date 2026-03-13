@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import csv
 import json
@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .aggregate import aggregate_observations, write_species_csv
-from .config import Config
+from .config import Config, GridConfig
 from .image_ops import dhash, hamming_distance, iter_grid_cells, load_image
 from .models import Observation, SpeciesKey, UnknownObservation
 from .ocr_windows import OcrLine, SpeciesNameMatcher, pick_cell_cp_value, pick_cell_name_text, run_ocr
@@ -82,8 +82,14 @@ def run_pipeline(
                 auto_pass_fallback_all += 1
 
         pass_rule = _resolve_pass_rule(effective_pass_name, config)
+        effective_grid = _resolve_effective_grid(
+            base_grid=config.grid,
+            effective_pass_name=effective_pass_name,
+            ocr_lines=ocr_lines,
+            image_h=image_h,
+        )
 
-        for slot_index, cell_rect, cell_image in iter_grid_cells(image, config.grid):
+        for slot_index, cell_rect, cell_image in iter_grid_cells(image, effective_grid):
             processed_cells += 1
             fingerprint = dhash(cell_image)
             pass_seen = seen_fingerprints.setdefault(effective_pass_name, [])
@@ -376,8 +382,8 @@ def _detect_pass_name_from_search_bar(lines: list[OcrLine], image_w: int, image_
         rel_x = cx / max(1.0, float(image_w))
         rel_y = cy / max(1.0, float(image_h))
 
-        # Search bar is usually around upper-middle part of the screenshot.
-        if rel_y < 0.12 or rel_y > 0.42:
+        # Search bar text is around upper-middle; keep this tight to avoid matching top header text.
+        if rel_y < 0.14 or rel_y > 0.34:
             continue
         if rel_x < 0.08 or rel_x > 0.92:
             continue
@@ -386,11 +392,15 @@ def _detect_pass_name_from_search_bar(lines: list[OcrLine], image_w: int, image_
         if not normalized:
             continue
 
+        classified = _classify_search_query_text(normalized)
+
         score = 2.8
         score -= abs(rel_y - 0.255) * 8.0
         score += min(2.0, (line.w / max(1.0, float(image_w))) * 4.0)
 
         compact = normalized.replace(" ", "")
+        if classified is not None and classified != "all":
+            score += 2.4
         if any(token in compact for token in ("dynamax", "lucky", "shadow", "purified", "shiny", "costume", "mega", "4*", "4star", "hundo")):
             score += 2.2
         if "search" in compact:
@@ -399,6 +409,10 @@ def _detect_pass_name_from_search_bar(lines: list[OcrLine], image_w: int, image_
             score -= 1.6
         if "!" in compact or "&" in compact:
             score += 0.8
+
+        digit_count = sum(1 for c in compact if c.isdigit())
+        if digit_count >= 2 and classified is None:
+            score -= 1.1
 
         candidates.append((score, normalized))
 
@@ -413,23 +427,20 @@ def _detect_pass_name_from_search_bar(lines: list[OcrLine], image_w: int, image_
         if classified is not None:
             return classified
 
-    # Last-resort: let pass rule inference parse the strongest text.
-    return candidates[0][1]
+    # No confident pass classification from OCR.
+    return None
 
 
 def _normalize_search_text(text: str) -> str:
     out = text.strip().lower()
-    out = out.replace("★", "*")
-    out = out.replace("☆", "*")
-    out = out.replace("-", "-")
-    out = out.replace("–", "-")
-    out = out.replace("—", "-")
-    out = out.replace("−", "-")
-    out = out.replace(" ", " ")
+    out = out.replace("\u2605", "*")
+    out = out.replace("\u2606", "*")
+    out = out.replace("\u2013", "-")
+    out = out.replace("\u2014", "-")
+    out = out.replace("\u2212", "-")
     out = re.sub(r"[^a-z0-9!&*\-\s]", " ", out)
     out = re.sub(r"\s+", " ", out)
     return out.strip()
-
 
 def _classify_search_query_text(text: str) -> str | None:
     compact = re.sub(r"\s+", "", text.lower())
@@ -439,17 +450,17 @@ def _classify_search_query_text(text: str) -> str | None:
     if "search" in compact:
         return "all"
 
-    if "dynamax" in compact or "gmax" in compact:
+    if "dynamax" in compact or "gmax" in compact or ("dyna" in compact and "max" in compact):
         return "query_dynamax"
-    if "lucky" in compact:
+    if "lucky" in compact or "luck" in compact:
         return "query_lucky"
-    if "shadow" in compact:
+    if "shadow" in compact or "shado" in compact:
         return "query_shadow"
-    if "purified" in compact:
+    if "purified" in compact or "purif" in compact:
         return "query_purified"
-    if "shiny" in compact:
+    if "shiny" in compact or "shin" in compact:
         return "query_shiny"
-    if "costume" in compact:
+    if "costume" in compact or "costum" in compact:
         return "query_costume"
 
     if "hundo" in compact or "4star" in compact or "4*" in compact or "*4" in compact:
@@ -470,6 +481,91 @@ def _classify_search_query_text(text: str) -> str | None:
     return None
 
 
+
+def _resolve_effective_grid(
+    base_grid: GridConfig,
+    effective_pass_name: str,
+    ocr_lines: list[OcrLine],
+    image_h: int,
+) -> GridConfig:
+    # Search-mode screens can have extra UI rows (e.g. "Show Evolutionary Line"),
+    # which pushes the Pokemon grid downward.
+    search_overlay = effective_pass_name != "all" or _has_evolutionary_line_text(ocr_lines)
+    if not search_overlay:
+        return base_grid
+
+    estimated_start_y = _estimate_grid_start_y_from_cp_lines(
+        ocr_lines=ocr_lines,
+        image_h=image_h,
+        cell_h=base_grid.cell_h,
+        base_start_y=base_grid.start_y,
+    )
+
+    if estimated_start_y is None:
+        estimated_start_y = min(0.33, base_grid.start_y + 0.05)
+
+    if abs(estimated_start_y - base_grid.start_y) < 0.004:
+        return base_grid
+
+    return GridConfig(
+        rows=base_grid.rows,
+        cols=base_grid.cols,
+        start_x=base_grid.start_x,
+        start_y=estimated_start_y,
+        cell_w=base_grid.cell_w,
+        cell_h=base_grid.cell_h,
+        gap_x=base_grid.gap_x,
+        gap_y=base_grid.gap_y,
+    )
+
+
+def _has_evolutionary_line_text(lines: list[OcrLine]) -> bool:
+    for line in lines:
+        normalized = _normalize_search_text(line.text or "")
+        if "evolutionary" in normalized and "line" in normalized:
+            return True
+    return False
+
+
+def _estimate_grid_start_y_from_cp_lines(
+    ocr_lines: list[OcrLine],
+    image_h: int,
+    cell_h: float,
+    base_start_y: float,
+) -> float | None:
+    cp_centers: list[float] = []
+    cp_pattern = re.compile(r"\bcp\s*[0-9]{2,5}\b")
+
+    for line in ocr_lines:
+        text = _normalize_search_text(line.text or "")
+        compact = text.replace(" ", "")
+        if not compact:
+            continue
+
+        has_cp = bool(cp_pattern.search(text))
+        if not has_cp:
+            has_cp = compact.startswith("cp") and any(ch.isdigit() for ch in compact)
+        if not has_cp:
+            continue
+
+        cy = line.y + (line.h / 2.0)
+        rel_y = cy / max(1.0, float(image_h))
+        if rel_y < 0.16 or rel_y > 0.95:
+            continue
+        cp_centers.append(rel_y)
+
+    if len(cp_centers) < 3:
+        return None
+
+    cp_centers.sort()
+    first_row_cp = cp_centers[min(2, len(cp_centers) - 1)]
+
+    # CP text usually sits near the top area of each cell.
+    estimated = first_row_cp - (cell_h * 0.12)
+    min_start = max(0.0, base_start_y - 0.01)
+    max_start = min(0.40, base_start_y + 0.14)
+    estimated = max(min_start, min(max_start, estimated))
+    return estimated
 def _resolve_pass_rule(pass_name: str, config: Config) -> dict[str, object]:
     direct = config.pass_rules.get(pass_name)
     if direct is None:
