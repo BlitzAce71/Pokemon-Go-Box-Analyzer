@@ -1,4 +1,4 @@
-﻿# Public Sharing / Deployment
+# Public Sharing / Deployment
 
 This app can be shared outside your home network in two main ways.
 
