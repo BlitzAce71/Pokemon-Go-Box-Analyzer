@@ -6,6 +6,8 @@ import io
 import json
 import re
 import tempfile
+import time
+import traceback
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -103,9 +105,21 @@ def _build_handler(settings: WebServerSettings) -> type[BaseHTTPRequestHandler]:
             if route != "/api/analyze":
                 self._send_json(HTTPStatus.NOT_FOUND, {"error": "Route not found."})
                 return
-            self._handle_analyze()
+
+            try:
+                self._handle_analyze()
+            except Exception as exc:
+                traceback.print_exc()
+                self._send_json(
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                    {
+                        "error": f"Server error during analyze: {type(exc).__name__}: {exc}",
+                    },
+                )
 
         def _handle_analyze(self) -> None:
+            started = time.time()
+
             payload = self._read_json_body(max_bytes=250_000_000)
             if payload is None:
                 return
@@ -114,6 +128,8 @@ def _build_handler(settings: WebServerSettings) -> type[BaseHTTPRequestHandler]:
             if not isinstance(uploads_obj, list):
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": "Expected JSON body with uploads list."})
                 return
+
+            print(f"/api/analyze begin uploads={len(uploads_obj)}")
 
             with tempfile.TemporaryDirectory(prefix="pogo_web_") as td:
                 root = Path(td)
@@ -180,6 +196,9 @@ def _build_handler(settings: WebServerSettings) -> type[BaseHTTPRequestHandler]:
                 csv_text = species_csv_path.read_text(encoding="utf-8-sig")
                 preview_rows = _preview_csv(csv_text, max_rows=50)
 
+                elapsed = time.time() - started
+                print(f"/api/analyze done uploads={saved} elapsed_sec={elapsed:.1f}")
+
                 self._send_json(
                     HTTPStatus.OK,
                     {
@@ -228,7 +247,10 @@ def _build_handler(settings: WebServerSettings) -> type[BaseHTTPRequestHandler]:
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
-            self.wfile.write(data)
+            try:
+                self.wfile.write(data)
+            except BrokenPipeError:
+                pass
 
         def _send_static_file(self, path: Path, content_type: str) -> None:
             if not path.exists() or not path.is_file():
@@ -240,7 +262,10 @@ def _build_handler(settings: WebServerSettings) -> type[BaseHTTPRequestHandler]:
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
-            self.wfile.write(data)
+            try:
+                self.wfile.write(data)
+            except BrokenPipeError:
+                pass
 
     return Handler
 

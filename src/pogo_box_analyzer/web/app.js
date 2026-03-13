@@ -33,38 +33,52 @@ function init() {
 }
 
 async function analyze() {
-  const uploads = [];
-  const files = fileInput.files || [];
-
-  for (const file of files) {
-    uploads.push({
-      pass_name: "auto",
-      filename: file.name,
-      data_base64: await readFileAsBase64(file),
-    });
-  }
-
-  if (uploads.length === 0) {
+  const files = Array.from(fileInput.files || []);
+  if (files.length === 0) {
     setStatus("Add screenshots before analyzing.");
     return;
   }
 
   analyzeBtn.disabled = true;
-  setStatus(`Encoding and analyzing ${uploads.length} screenshots...`);
+  setStatus(`Preparing ${files.length} screenshots...`);
 
   try {
+    const uploads = await Promise.all(
+      files.map(async (file) => ({
+        pass_name: "auto",
+        filename: file.name,
+        data_base64: await readFileAsBase64(file),
+      }))
+    );
+
+    setStatus(`Encoding and analyzing ${uploads.length} screenshots...`);
+
     const resp = await fetch("/api/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ uploads }),
     });
-    const data = await resp.json();
 
-    if (!resp.ok) {
-      throw new Error(data.error || "Analyze request failed.");
+    const raw = await resp.text();
+    let data = null;
+    try {
+      data = raw ? JSON.parse(raw) : null;
+    } catch {
+      data = null;
     }
 
-    const csvText = data.csv_text || "";
+    if (!resp.ok) {
+      const msg = data && data.error ? data.error : `Request failed (HTTP ${resp.status}).`;
+      throw new Error(msg);
+    }
+
+    if (!data || typeof data !== "object") {
+      throw new Error(
+        `Server returned invalid response (HTTP ${resp.status}). Check Render logs for /api/analyze.`
+      );
+    }
+
+    const csvText = String(data.csv_text || "");
     latestCsvBlob = new Blob([csvText], { type: "text/csv;charset=utf-8" });
     latestCsvName = buildCsvFilename();
 
