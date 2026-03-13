@@ -50,10 +50,11 @@ git push -u origin main
 4. Render will detect `render.yaml` and create the web service.
 5. Wait for first deploy to finish, then open the generated `https://...onrender.com` URL.
 
-Current app settings in `render.yaml`:
+Current app settings:
 - Build: `pip install -r requirements.txt && pip install .`
 - Start: `python -m pogo_box_analyzer serve-web --host 0.0.0.0 --port $PORT`
 - Health check: `/health`
+- Python version pinned to 3.12 via `.python-version` / `runtime.txt`
 
 Notes:
 - Free tiers may sleep when idle and take a cold-start delay.
